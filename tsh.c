@@ -322,7 +322,7 @@ void sigint_handler(int sig)
     if (!pid) return; // if fgpid == 0, then there's no fg jobs
     printf("Job (%d) (%d) terminated by signal 2\n", pid2jid(pid), pid);
 
-    kill(pid, SIGINT);
+    kill(-pid, SIGINT);
     return;
 }
 
