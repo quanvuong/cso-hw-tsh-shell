@@ -168,14 +168,31 @@ void eval(char *cmdline)
     char *argv[MAXARGS];
     char cmdline_buf[MAXLINE];
     int bg;
+    pid_t pid;
 
     strcpy(cmdline_buf, cmdline);
     bg = parseline(cmdline_buf, argv);
 
     if (argv[0] == NULL) return; // Ignore empty line
 
-    if (!builtin_cmd(argv)) {
+    // TODO: read children by using signal
 
+    if (!builtin_cmd(argv)) {
+        if ((pid = fork()) == 0) {
+            if (execve(argv[0], argv, environ) < 0) {
+                printf("%s: command not found.\n", argv[0]);
+                exit(0);
+            }
+        }
+
+        if (!bg) {
+            int status;
+            if (waitpid(pid, &status, 0) < 0) { // Parents wait for child (fg job) to terminate
+                unix_error("waitfg: waitpid error");
+            }
+        } else {
+            printf("%d %s", pid, cmdline);
+        }
     }
 
     return;
