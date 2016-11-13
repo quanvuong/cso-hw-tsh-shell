@@ -175,7 +175,8 @@ void eval(char *cmdline)
 
     if (argv[0] == NULL) return; // Ignore empty line
 
-    // TODO: read children by using signal
+    // TODO: give each children process unique process group ID 
+    // TODO: reaps children by using signal
 
     if (!builtin_cmd(argv)) {
         if ((pid = fork()) == 0) {
@@ -191,7 +192,7 @@ void eval(char *cmdline)
                 unix_error("waitfg: waitpid error");
             }
         } else {
-            printf("%d %s", pid, cmdline);
+            printf("[1] (%d) %s", pid, cmdline); // TODO: implement job queue and replace 1 with job number
         }
     }
 
@@ -261,9 +262,8 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    if (!strcmp(argv[0], "quit")) {
-        exit(0);
-    }
+    if (!strcmp(argv[0], "quit")) exit(0);
+    if (!strcmp(argv[0], "&")) return 1;
     return 0;     /* not a builtin command */
 }
 
