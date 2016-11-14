@@ -390,13 +390,22 @@ void sigchld_handler(int sig)
     int status;
 
     Sigfillset(&mask_all);
-    if ((pid = waitpid(-1, &status, 0)) > 0) { // Reap a zombie child // TODO: reap all child in a while loop
+    while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) { // Reap a zombie child // TODO: reap all child in a while loop
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
         if (WIFSIGNALED(status)) {
             printf("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status));
             deletejob(jobs, pid); // Delete child from job list
         } else if (WIFEXITED(status)) {
             deletejob(jobs, pid);
+        } else if (WIFSTOPPED(status)) {
+            struct job_t* job = getjobpid(jobs, pid);
+            if (!job) {
+                printf("Job not found to stop (%d)\n", pid);
+                return;
+            }
+
+            job->state = ST;
+            printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status));
         }
 
         Sigprocmask(SIG_SETMASK, &prev_all, NULL);
@@ -432,6 +441,11 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t fg_pid = fgpid(jobs);
+
+    if (!fg_pid) return; // no fg processes
+
+    Kill(-fg_pid, sig);
     return;
 }
 
