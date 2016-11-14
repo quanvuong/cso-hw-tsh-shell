@@ -85,6 +85,73 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+
+// Functions borrowed from csapp.c 
+
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
+{
+    if (sigprocmask(how, set, oldset) < 0)
+	unix_error("Sigprocmask error");
+    return;
+}
+
+void Sigemptyset(sigset_t *set)
+{
+    if (sigemptyset(set) < 0)
+	unix_error("Sigemptyset error");
+    return;
+}
+
+void Sigfillset(sigset_t *set)
+{ 
+    if (sigfillset(set) < 0)
+	unix_error("Sigfillset error");
+    return;
+}
+
+void Sigaddset(sigset_t *set, int signum)
+{
+    if (sigaddset(set, signum) < 0)
+	unix_error("Sigaddset error");
+    return;
+}
+
+pid_t Waitpid(pid_t pid, int *iptr, int options) 
+{
+    pid_t retpid;
+
+    if ((retpid  = waitpid(pid, iptr, options)) < 0) 
+	unix_error("Waitpid error");
+    return(retpid);
+}
+
+unsigned int Sleep(unsigned int secs) 
+{
+    unsigned int rc;
+
+    if ((rc = sleep(secs)) < 0)
+	unix_error("Sleep error");
+    return rc;
+}
+
+/* $begin kill */
+void Kill(pid_t pid, int signum) 
+{
+    int rc;
+
+    if ((rc = kill(pid, signum)) < 0)
+	unix_error("Kill error");
+}
+/* $end kill */
+
+void Setpgid(pid_t pid, pid_t pgid) {
+    int rc;
+
+    if ((rc = setpgid(pid, pgid)) < 0)
+	unix_error("Setpgid error");
+    return;
+}
+
 /*
  * main - The shell's main routine 
  */
@@ -170,31 +237,37 @@ void eval(char *cmdline)
     int bg;
     pid_t pid;
 
+    sigset_t mask_all, mask_one, prev_one;
+
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_one);
+    Sigaddset(&mask_one, SIGCHLD);
+    Signal(SIGCHLD, sigchld_handler);
+
     strcpy(cmdline_buf, cmdline);
     bg = parseline(cmdline_buf, argv);
 
     if (argv[0] == NULL) return; // Ignore empty line
 
-    // TODO: give each children process unique process group ID 
-    // TODO: reaps children by using signal
-
     if (!builtin_cmd(argv)) {
+        Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); // Block SIGCHLD
         if ((pid = fork()) == 0) {
-            if (execve(argv[0], argv, environ) < 0) {
+            Setpgid(0, 0);
+            Sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock SIGCHLD
+            if (execve(argv[0], argv, environ) < 0) { 
                 printf("%s: command not found.\n", argv[0]);
                 exit(0);
             }
         }
 
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL);
         int job_state = bg ? BG : FG;
 
         addjob(jobs, pid, job_state, cmdline_buf);
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock SIGCHLD;
 
         if (!bg) {
-            int status;
-            if (waitpid(pid, &status, 0) < 0) { // Parents wait for child (fg job) to terminate
-                unix_error("waitfg: waitpid error");
-            }
+            waitfg(pid); // Parents wait for fg job to terminate
         } else {
             printf("[1] (%d) %s", pid, cmdline); // TODO: implement job queue and replace 1 with job number
         }
@@ -268,8 +341,6 @@ int builtin_cmd(char **argv)
 {   
     if (!strcmp(argv[0], "quit")) exit(0);
 
-    if (!strcmp(argv[0], "&")) return 1;
-
     if (!strcmp(argv[0], "jobs")) {
         listjobs(jobs);
         return 1;
@@ -291,6 +362,12 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    struct job_t *fg_job = getjobpid(jobs,pid);
+
+    if (!fg_job) return; // fg_job has already been terminated
+
+    while (fg_job->state == FG) Sleep(1);
+    
     return;
 }
 
@@ -307,6 +384,29 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    int olderrno = errno;
+    sigset_t mask_all, prev_all;
+    pid_t pid;
+    int status;
+
+    Sigfillset(&mask_all);
+    if ((pid = waitpid(-1, &status, 0)) > 0) { // Reap a zombie child // TODO: reap all child in a while loop
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        if (WIFSIGNALED(status)) {
+            printf("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status));
+            deletejob(jobs, pid); // Delete child from job list
+        } else if (WIFEXITED(status)) {
+            deletejob(jobs, pid);
+        }
+
+        Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+    }
+
+    // if (errno != ECHILD) unix_error("waitpid error"); 
+    // TODO: add error handling for waitpid here
+
+    errno = olderrno;
+
     return;
 }
 
@@ -320,9 +420,8 @@ void sigint_handler(int sig)
     pid_t pid = fgpid(jobs);
 
     if (!pid) return; // if fgpid == 0, then there's no fg jobs
-    printf("Job (%d) (%d) terminated by signal 2\n", pid2jid(pid), pid);
 
-    kill(-pid, SIGINT);
+    Kill(-pid, SIGINT);
     return;
 }
 
