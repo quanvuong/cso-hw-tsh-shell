@@ -255,7 +255,7 @@ void eval(char *cmdline)
             Setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock SIGCHLD
             if (execve(argv[0], argv, environ) < 0) { 
-                printf("%s: command not found.\n", argv[0]);
+                printf("%s: Command not found\n", argv[0]);
                 exit(0);
             }
         }
@@ -269,7 +269,7 @@ void eval(char *cmdline)
         if (!bg) {
             waitfg(pid); // Parents wait for fg job to terminate
         } else {
-            printf("[1] (%d) %s", pid, cmdline); // TODO: implement job queue and replace 1 with job number
+            printf("[%d] (%d) %s", pid2jid(pid) , pid, cmdline);
         }
     }
 
@@ -365,7 +365,7 @@ void do_bgfg(char **argv)
 
     // Check if argument is missing
     if (!argv[1]) {
-        printf("%s commands requires either PID or %%jobid. \n", argv[0]);
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
         return;
     }
 
@@ -375,19 +375,19 @@ void do_bgfg(char **argv)
     if (isdigit(arg[0])) {
         pid_t pid = atoi(arg);
         job = getjobpid(jobs, pid);
-        if (!job->pid) {
-            printf("Job (%d) not found\n", pid);
+        if (!job) {
+            printf("(%d): No such process\n", pid);
             return;
         }
     } else if (!strncmp(arg, "%", 1)) {
         int jid = atoi(&arg[1]);
         job = getjobjid(jobs, jid);
-        if (!job->pid) {
-            printf("Job %%(%d) not found\n", jid);
+        if (!job) {
+            printf("%%%d: No such job\n", jid);
             return;
         }
     } else {
-        printf("%s commands requires either PID or %%jobid. \n", argv[0]);
+        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
         return;
     }
 
