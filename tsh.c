@@ -396,9 +396,12 @@ void do_bgfg(char **argv)
         job->state = BG;
         printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
     } else if (!strcmp(argv[0], "fg")) {
-
+        Kill(-(job->pid), SIGCONT);
+        job->state = FG;
+        waitfg(job->pid);
     } else {
-
+        printf("Error with do_bgfg.\n");
+        exit(0);
     }
     return;
 }
