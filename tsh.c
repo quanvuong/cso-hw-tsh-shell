@@ -346,6 +346,13 @@ int builtin_cmd(char **argv)
         return 1;
     }
 
+    if (!strcmp(argv[0], "bg") || !strcmp(argv[0], "fg")) {
+        do_bgfg(argv);
+        return 1;
+    }
+
+    if(!strcmp(argv[0],"&")) return 1;
+
     return 0;     /* not a builtin command */
 }
 
@@ -354,6 +361,45 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    struct job_t* job;
+
+    // Check if argument is missing
+    if (!argv[1]) {
+        printf("%s commands requires either PID or %%jobid. \n", argv[0]);
+        return;
+    }
+
+    char arg[strlen(argv[1])];
+    sscanf(argv[1], "%s", arg);
+
+    if (isdigit(arg[0])) {
+        pid_t pid = atoi(arg);
+        job = getjobpid(jobs, pid);
+        if (!job->pid) {
+            printf("Job (%d) not found\n", pid);
+            return;
+        }
+    } else if (!strncmp(arg, "%", 1)) {
+        int jid = atoi(&arg[1]);
+        job = getjobjid(jobs, jid);
+        if (!job->pid) {
+            printf("Job %%(%d) not found\n", jid);
+            return;
+        }
+    } else {
+        printf("%s commands requires either PID or %%jobid. \n", argv[0]);
+        return;
+    }
+
+    if (!strcmp(argv[0], "bg")) {
+        Kill(-(job->pid), SIGCONT);
+        job->state = BG;
+        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+    } else if (!strcmp(argv[0], "fg")) {
+
+    } else {
+
+    }
     return;
 }
 
@@ -390,7 +436,7 @@ void sigchld_handler(int sig)
     int status;
 
     Sigfillset(&mask_all);
-    while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) { // Reap a zombie child // TODO: reap all child in a while loop
+    while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) { // Reap a zombie child //
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
         if (WIFSIGNALED(status)) {
             printf("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status));
@@ -406,13 +452,11 @@ void sigchld_handler(int sig)
 
             job->state = ST;
             printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status));
+        } else {
+            unix_error("waitpid error");
         }
-
         Sigprocmask(SIG_SETMASK, &prev_all, NULL);
     }
-
-    // if (errno != ECHILD) unix_error("waitpid error"); 
-    // TODO: add error handling for waitpid here
 
     errno = olderrno;
 
