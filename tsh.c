@@ -465,7 +465,7 @@ void sigchld_handler(int sig)
             job->state = ST;
             printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status));
         } else {
-            unix_error("Waitpid error");
+            unix_error("Child stopped for unknown reasons");
         }
         Sigprocmask(SIG_SETMASK, &prev_all, NULL);
     }
